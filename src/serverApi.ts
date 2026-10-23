@@ -978,6 +978,24 @@ export async function handleApiRoute(
       }
 
       const body = await parseJsonBody(req);
+
+      // Telegram Webhook Update ID idempotency deduplication cache
+      const updateId = body.update_id;
+      if (updateId) {
+        if (!globalThis.processedUpdateIds) {
+          globalThis.processedUpdateIds = new Set<number>();
+        }
+        if (globalThis.processedUpdateIds.has(updateId)) {
+          sendJson(res, 200, { success: true, message: 'Deduplicated duplicate update_id' });
+          return true;
+        }
+        globalThis.processedUpdateIds.add(updateId);
+        if (globalThis.processedUpdateIds.size > 500) {
+          const first = globalThis.processedUpdateIds.values().next().value;
+          if (first !== undefined) globalThis.processedUpdateIds.delete(first);
+        }
+      }
+
       // Support both direct simulator payload { command } and Telegram webhook update { message: { text } }
       let rawText = body.command || body.message?.text || '';
       const trimmed = rawText.trim();

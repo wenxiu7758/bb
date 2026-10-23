@@ -1453,10 +1453,20 @@ export function compareTwoPlayers(
 
   const tierDetails: TierMatchDetail[] = [];
 
+  function areCardsIdentical(c1: SSSCard[], c2: SSSCard[]): boolean {
+    if (c1.length !== c2.length) return false;
+    const s1 = [...c1].sort((a, b) => b.rank - a.rank || b.suitVal - a.suitVal);
+    const s2 = [...c2].sort((a, b) => b.rank - a.rank || b.suitVal - a.suitVal);
+    return s1.every((c, idx) => c.rank === s2[idx].rank && c.suitVal === s2[idx].suitVal);
+  }
+
   // 头道
   let headBase = 0;
   let headWinner: 'me' | 'opp' | 'tie' = 'tie';
-  if (myH.scoreRank > opH.scoreRank) {
+  if (areCardsIdentical(myHand.head, oppHand.head)) {
+    headWinner = 'tie';
+    headBase = 0;
+  } else if (myH.scoreRank > opH.scoreRank) {
     headWinner = 'me';
     headBase = 1;
   } else if (myH.scoreRank < opH.scoreRank) {
@@ -1488,7 +1498,10 @@ export function compareTwoPlayers(
   // 中道
   let midBase = 0;
   let midWinner: 'me' | 'opp' | 'tie' = 'tie';
-  if (myM.scoreRank > opM.scoreRank) {
+  if (areCardsIdentical(myHand.mid, oppHand.mid)) {
+    midWinner = 'tie';
+    midBase = 0;
+  } else if (myM.scoreRank > opM.scoreRank) {
     midWinner = 'me';
     midBase = 1;
   } else if (myM.scoreRank < opM.scoreRank) {
@@ -1520,7 +1533,10 @@ export function compareTwoPlayers(
   // 尾道
   let tailBase = 0;
   let tailWinner: 'me' | 'opp' | 'tie' = 'tie';
-  if (myT.scoreRank > opT.scoreRank) {
+  if (areCardsIdentical(myHand.tail, oppHand.tail)) {
+    tailWinner = 'tie';
+    tailBase = 0;
+  } else if (myT.scoreRank > opT.scoreRank) {
     tailWinner = 'me';
     tailBase = 1;
   } else if (myT.scoreRank < opT.scoreRank) {
