@@ -545,6 +545,22 @@ function chessWebSocketPlugin(): Plugin {
         }
       }, 5000);
 
+      // Periodic room garbage collection: clean stale user-created rooms and empty scene waiting rooms older than 1 hour
+      setInterval(() => {
+        const now = Date.now();
+        const defaultRoomIds = new Set(['RM-202', 'RM-204', 'RM-205']);
+        for (const [id, room] of rooms.entries()) {
+          if (!defaultRoomIds.has(id) && room.createdAt && now - room.createdAt > 3600000 && (room.spectators <= 1 || (!room.players || room.players.length === 0))) {
+            rooms.delete(id);
+          }
+        }
+        for (const [id, sRoom] of sceneWaitingRooms.entries()) {
+          if (sRoom.createdAt && now - sRoom.createdAt > 3600000 && (!sRoom.players || sRoom.players.length === 0)) {
+            sceneWaitingRooms.delete(id);
+          }
+        }
+      }, 600000);
+
       // REST API middlewares
       server.middlewares.use(async (req, res, next) => {
         if (req.url && req.url.startsWith('/api/')) {
