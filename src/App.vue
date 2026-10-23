@@ -233,6 +233,13 @@
             <span class="font-bold text-xs sm:text-sm text-amber-200 font-serif-title drop-shadow whitespace-nowrap">
               {{ currentSceneDisplayName || activeModuleInfo?.name }}
             </span>
+            <span
+              v-if="isPracticeMode"
+              class="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/25 text-amber-200 font-mono border border-amber-500/40"
+              title="当前为人机补位试玩模式，局内筹码与胜负纯属模拟，不影响真实账户积分"
+            >
+              人机试玩(模拟积分)
+            </span>
           </div>
         </div>
 
@@ -1036,6 +1043,7 @@ const activeShisanshuiScene = ref<ShisanshuiSceneMode>('four-realtime');
 const activeYansanScene = ref<YansanSceneMode>('yansan-5-10');
 const activeSceneMode = ref<string>('yansan-5-10');
 const currentWaitingRoomPlayers = ref<ScenePlayer[]>([]);
+const isPracticeMode = ref(false);
 
 const activeMahjongSceneTag = computed(() => {
   if (activeMahjongScene.value === 'hongzhong-6') return '红中6码';
@@ -1350,6 +1358,7 @@ function onChangeSceneFromWaitingRoom() {
 
 function onFullSeatGameStart(players: ScenePlayer[]) {
   currentWaitingRoomPlayers.value = players;
+  isPracticeMode.value = players.some((p) => Boolean(p.isSimulated));
   const match = rooms.value.find((r) => r.gameType === activeGameType.value);
   if (match) activeRoomId.value = match.id;
   currentView.value = 'arena';
@@ -1362,6 +1371,7 @@ function enterRoom(r: any) {
     soundFX.playTap();
     return;
   }
+  isPracticeMode.value = false;
   activeRoomId.value = r.id;
   activeGameType.value = r.gameType;
   currentTheme.value = getGameTheme(r.gameType);
@@ -1400,6 +1410,8 @@ function toggleFullscreen() {
 function returnToLobby() {
   currentView.value = 'lobby';
   showChatDrawer.value = false;
+  isPracticeMode.value = false;
+  currentWaitingRoomPlayers.value = [];
   soundFX.playTap();
 }
 
@@ -1773,8 +1785,18 @@ function onGameMove(payload: any) {
       scorePoints = isWin ? 10 : -10;
     }
 
-    // 专属输赢分语音播报（仅玩家本地设备能够听到）
+    // 专属输赢分语音播报（仅玩家本地设备能够听到，试玩演练模式也播报给玩家提供完整局内反馈）
     soundFX.speakScoreResult(scorePoints, isWin, isTie);
+
+    // 【重大业务风控】：人机补位试玩模式 (Practice Mode)，积分纯属模拟演练，严禁写入真实玩家真实账户与排行榜！
+    if (isPracticeMode.value) {
+      console.info('[人机补位试玩模式] 牌局演练结束，胜负积分仅供模拟演练体验，未写入真实玩家资产：', {
+        simCoinsDelta: coinsDelta,
+        scorePoints,
+        gameType: activeGameType.value,
+      });
+      return;
+    }
 
     userProfile.coins = Math.max(0, userProfile.coins + coinsDelta);
     userProfile.rating = Math.max(1000, userProfile.rating + ratingDelta);

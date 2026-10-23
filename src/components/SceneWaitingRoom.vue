@@ -63,10 +63,10 @@
           type="button"
           @click="addSimulatedPlayer"
           class="px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-600/40 to-amber-500/40 hover:from-amber-600/60 hover:to-amber-500/60 text-amber-200 border border-amber-400/50 text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1 shadow-sm"
-          title="手动邀请一位牌友模拟入座（仅供测试满座开局，绝无后台静默人机）"
+          title="使用人机补位快速开局试玩（模拟试玩模式，胜负积分纯属演练，不计入真实玩家账户）"
         >
           <span>⚡</span>
-          <span>邀牌友入座测试</span>
+          <span>用人机补位试玩</span>
         </button>
 
         <!-- Connection ping -->
@@ -90,7 +90,7 @@
               {{ isStarting ? `🎉 全员满座 (${currentPlayers.length}/${maxPlayers})！牌局即将自动开启` : `正在等待牌友选择相同场景入座 (${currentPlayers.length}/${maxPlayers})` }}
             </div>
             <div class="text-[9px] sm:text-[10px] text-[#D4C3B3] font-mono mt-0.5">
-              {{ isStarting ? `各席位已就位，倒计时 ${countdownSeconds} 秒后发牌...` : '纯真人实时匹配 · 严禁人机补位 · 满座即刻自动开战' }}
+              {{ isStarting ? (hasSimulatedPlayer ? '🤖 已启用人机补位试玩 · 本局输赢纯属演练，不计入真实玩家积分' : `各席位已就位，倒计时 ${countdownSeconds} 秒后发牌...`) : '纯真人实时匹配 · 点击右上角可用人机补位试玩 · 满座即刻自动开战' }}
             </div>
           </div>
           <span class="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 font-mono font-bold text-xs border border-amber-500/40">
@@ -277,6 +277,10 @@ const countdownSeconds = ref(3);
 let countdownTimer: any = null;
 const lastGreetingText = ref('');
 let greetingTimer: any = null;
+
+const hasSimulatedPlayer = computed(() => {
+  return currentPlayers.value.some((p) => Boolean(p.isSimulated));
+});
 
 const WAITING_GREETINGS = [
   '🍵 各位客官上座，慢用香茗！',
