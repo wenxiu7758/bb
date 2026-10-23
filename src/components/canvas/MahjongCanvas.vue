@@ -992,6 +992,9 @@ interface WinningBreakdown {
 }
 
 const playerKongExtra = ref<number[]>([0, 0, 0]); // [East, North, West] extra points owed by opponents due to player's Kongs
+// 全席位杠分净盈亏记账本 [0:玩家, 1:东席, 2:北席, 3:西席]
+const seatKongScores = ref<number[]>([0, 0, 0, 0]);
+const kongRecords = ref<string[]>([]);
 
 const winningBreakdown = ref<WinningBreakdown>({
   fans: ['自摸和牌 (基准 1番)', '常规平胡 (不计翻倍)'],
@@ -1127,6 +1130,8 @@ function dealNewMatch(designatedDealer?: number) {
   wallCount.value = wallPool.length;
 
   playerKongExtra.value = [0, 0, 0];
+  seatKongScores.value = [0, 0, 0, 0];
+  kongRecords.value = [];
   meldedTiles.value = [];
   oppMelds.value = [[], [], []];
   discards.value = [];
@@ -1763,28 +1768,66 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
     fansList.push(`自摸奖码 (${maCount}码中${hitCount}码)`);
   }
 
-  let totalWon = 0;
-  let kongBonusTotal = 0;
+  // 综合结算：基础自摸 + 全席位杠分净收支 (赢家自摸+3*底码，输家各付底码，并结清所有明杠/暗杠点数)
+  const netCoinsPerSeat = [0, 0, 0, 0];
+  for (let s = 0; s < 4; s++) {
+    const zimoDelta = s === winnerSeat ? payoutPerOpponent * 3 : -payoutPerOpponent;
+    netCoinsPerSeat[s] = zimoDelta + seatKongScores.value[s];
+  }
+
+  // 本席玩家 (seat 0) 实际总盈亏 (如明杠得10分，对手自摸50分，则本席实输 -50 + 10 = -40分)
+  const rewardCoins = netCoinsPerSeat[0];
+  let totalWon = netCoinsPerSeat[winnerSeat];
+  let kongBonusTotal = Math.max(0, seatKongScores.value[0]);
   const opponentPayouts = [0, 0, 0];
+  const oppNames = ['东席', '北席', '西席'];
+
   if (isPlayer) {
-    const oppNames = ['东席', '北席', '西席'];
+    // 玩家自己自摸和牌
     for (let i = 0; i < 3; i++) {
-      const extra = playerKongExtra.value[i];
-      const p = payoutPerOpponent + extra;
-      opponentPayouts[i] = p;
-      totalWon += p;
-      kongBonusTotal += extra;
-      if (extra > 0) {
-        fansList.push(`杠牌加成 (${oppNames[i]}多输${extra}分)`);
+      const oppSeat = i + 1;
+      const actualLoss = Math.max(0, -netCoinsPerSeat[oppSeat]);
+      opponentPayouts[i] = actualLoss;
+      if (seatKongScores.value[oppSeat] < 0) {
+        fansList.push(`杠牌加成 (${oppNames[i]}被杠多输${-seatKongScores.value[oppSeat]}分)`);
       }
     }
+    if (seatKongScores.value[0] > 0) {
+      fansList.push(`本席杠牌进账 (+${seatKongScores.value[0]}分)`);
+    }
   } else {
-    totalWon = payoutPerOpponent * 3;
-    opponentPayouts[0] = payoutPerOpponent;
-    opponentPayouts[1] = payoutPerOpponent;
-    opponentPayouts[2] = payoutPerOpponent;
+    // 其他玩家自摸和牌
+    for (let i = 0; i < 3; i++) {
+      const oppSeat = i + 1;
+      if (oppSeat === winnerSeat) {
+        opponentPayouts[i] = netCoinsPerSeat[oppSeat]; // 自摸赢家实赢总分
+      } else {
+        opponentPayouts[i] = Math.max(0, -netCoinsPerSeat[oppSeat]); // 输家实输总分 (含被杠多输)
+      }
+    }
+
+    // 将玩家杠分收益与冲抵明细加入 fansList 供弹窗清晰展示
+    if (seatKongScores.value[0] > 0) {
+      for (const rec of kongRecords.value) {
+        if (rec.includes('您')) {
+          fansList.push(rec);
+        }
+      }
+      const myGrossLoss = payoutPerOpponent;
+      const myNetLoss = -rewardCoins;
+      fansList.push(`自摸本输${myGrossLoss}分，冲抵杠分+${seatKongScores.value[0]}分，实输${myNetLoss}分`);
+    } else if (seatKongScores.value[0] < 0) {
+      fansList.push(`被杠扣除${-seatKongScores.value[0]}分，冲抵后实输${-rewardCoins}分`);
+    }
+
+    // 记录被玩家杠的对手多输分
+    for (let i = 0; i < 3; i++) {
+      const oppSeat = i + 1;
+      if (oppSeat !== winnerSeat && seatKongScores.value[oppSeat] < 0) {
+        fansList.push(`【${oppNames[i]}】被杠多输${-seatKongScores.value[oppSeat]}分 (实输${-netCoinsPerSeat[oppSeat]}分)`);
+      }
+    }
   }
-  const rewardCoins = isPlayer ? totalWon : -payoutPerOpponent;
 
   winningBreakdown.value = {
     fans: fansList,
@@ -2626,11 +2669,17 @@ function handleGang() {
 
   if (kongedOpponentSeat !== null && kongedOpponentSeat > 0 && kongedOpponentSeat <= 3) {
     playerKongExtra.value[kongedOpponentSeat - 1] += 10;
+    seatKongScores.value[0] += 10;
+    seatKongScores.value[kongedOpponentSeat] -= 10;
+    kongRecords.value.push(`您明杠【${SEAT_NAMES[kongedOpponentSeat]}】得10分 (${SEAT_NAMES[kongedOpponentSeat]}多输10分)`);
   }
   if (isAnOrBuGang) {
     for (let i = 0; i < 3; i++) {
       playerKongExtra.value[i] += 10;
+      seatKongScores.value[i + 1] -= 10;
     }
+    seatKongScores.value[0] += 30;
+    kongRecords.value.push('您暗杠/补杠各得三家10分 (+30分，三家各多输10分)');
   }
 
   // 杠后从牌墙末尾补一张牌入座 (杠上自摸机会)
