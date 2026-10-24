@@ -291,8 +291,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { soundFX } from '../utils/sound';
+import {
+  saveLocalProfile,
+  loadPointsTransactions,
+  recordPointsTx,
+  PointsTransaction,
+} from '../utils/storage';
 
 interface UserProfile {
   id: string;
@@ -355,54 +361,18 @@ async function searchUser() {
   }
 }
 
-function saveLocalProfile(p: UserProfile) {
-  try {
-    localStorage.setItem('guocui_user_profile', JSON.stringify(p));
-  } catch {}
-}
+const transactions = ref<PointsTransaction[]>(loadPointsTransactions());
 
-interface TxItem {
-  id: string;
-  type: string;
-  title: string;
-  amount: number;
-  balanceAfter: number;
-  timestamp: string;
-}
+onMounted(() => {
+  transactions.value = loadPointsTransactions();
+});
 
-const transactions = ref<TxItem[]>(loadPointsTransactions());
-
-function loadPointsTransactions(): TxItem[] {
-  try {
-    const raw = localStorage.getItem('guocui_points_transactions');
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return [
-    {
-      id: 'tx_init',
-      type: 'reward',
-      title: '茶楼新人入座初始筹码赠礼',
-      amount: 8888,
-      balanceAfter: userCoins.value,
-      timestamp: new Date().toLocaleDateString() + ' 10:00',
-    },
-  ];
-}
-
-function recordPointsTx(type: string, title: string, amount: number, balanceAfter: number) {
-  const item: TxItem = {
-    id: `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    type,
-    title,
-    amount,
-    balanceAfter,
-    timestamp: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-  };
-  transactions.value.unshift(item);
-  try {
-    localStorage.setItem('guocui_points_transactions', JSON.stringify(transactions.value));
-  } catch {}
-}
+watch(
+  () => props.profile.coins,
+  () => {
+    transactions.value = loadPointsTransactions();
+  }
+);
 
 function submitTransfer() {
   if (!searchedUser.value || transferAmount.value <= 0) return;

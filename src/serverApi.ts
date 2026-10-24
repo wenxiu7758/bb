@@ -265,7 +265,10 @@ export async function handleApiRoute(
           return true;
         }
 
-        existing.coins = Math.max(0, Math.floor(Number(payload.profile.coins) || 0));
+        // 服务端数据库作为资产权威源：若后台管理员刚调整了筹码，以服务端数值为准；同时支持正常战绩同步
+        if (typeof existing.coins !== 'number') {
+          existing.coins = Math.max(0, Math.floor(Number(payload.profile.coins) || 0));
+        }
         if (payload.profile.name) existing.name = payload.profile.name;
         if (payload.profile.avatar) existing.avatar = payload.profile.avatar;
         if (payload.profile.rating) existing.rating = payload.profile.rating;
@@ -277,7 +280,14 @@ export async function handleApiRoute(
         db.records = payload.records.slice(0, 100);
       }
       saveDatabase(db);
-      sendJson(res, 200, { success: true });
+      const targetUser = payload.profile ? db.profiles[payload.profile.id] : undefined;
+      sendJson(res, 200, {
+        success: true,
+        coins: targetUser?.coins,
+        rating: targetUser?.rating,
+        level: targetUser?.level,
+        profile: targetUser,
+      });
     } catch (e) {
       sendJson(res, 500, { success: false, error: String(e) });
     }
@@ -460,7 +470,15 @@ export async function handleApiRoute(
         sendJson(res, 200, { success: true, valid: false, sessionExpired: true, error: '您的账号已在另一台设备登录，当前会话已失效' });
         return true;
       }
-      sendJson(res, 200, { success: true, valid: true });
+      sendJson(res, 200, {
+        success: true,
+        valid: true,
+        coins: user.coins,
+        rating: user.rating,
+        level: user.level,
+        name: user.name,
+        profile: user,
+      });
     } catch (e) {
       sendJson(res, 500, { success: false, error: String(e) });
     }
@@ -661,6 +679,22 @@ export async function handleApiRoute(
         `${reason}: ${oldCoins} -> ${user.coins} (变动: ${user.coins - oldCoins >= 0 ? '+' : ''}${user.coins - oldCoins})`,
         user.coins - oldCoins
       );
+
+      if (typeof broadcast === 'function') {
+        broadcast({
+          type: 'user_coins_updated',
+          userId: user.id,
+          phone: user.phone,
+          username: user.username,
+          name: user.name,
+          coins: user.coins,
+          rating: user.rating,
+          level: user.level,
+          delta: user.coins - oldCoins,
+          operator,
+          timestamp: Date.now(),
+        });
+      }
 
       sendJson(res, 200, {
         success: true,
@@ -1310,6 +1344,24 @@ export async function handleApiRoute(
           user.updatedAt = Date.now();
           saveDatabase(db);
           recordAdminLog('TG_ADDPOINTS', operator, user.name, `通过 Telegram 加筹码 +${amt}`, amt);
+
+          if (typeof broadcast === 'function') {
+            broadcast({
+              type: 'user_coins_updated',
+              userId: user.id,
+              phone: user.phone,
+              username: user.username,
+              name: user.name,
+              coins: user.coins,
+              rating: user.rating,
+              level: user.level,
+              operator,
+              delta: amt,
+              action: 'tg_addpoints',
+              timestamp: Date.now(),
+            });
+          }
+
           reply = `✅ 成功为 *${user.name}* (📱 \`${user.phone}\`) 注入筹码 *+${amt.toLocaleString()}* 分！\n当前持有筹码: *${user.coins.toLocaleString()}* 分`;
           break;
         }
@@ -1332,6 +1384,24 @@ export async function handleApiRoute(
           user.updatedAt = Date.now();
           saveDatabase(db);
           recordAdminLog('TG_SUBPOINTS', operator, user.name, `通过 Telegram 扣除筹码 -${amt}`, -amt);
+
+          if (typeof broadcast === 'function') {
+            broadcast({
+              type: 'user_coins_updated',
+              userId: user.id,
+              phone: user.phone,
+              username: user.username,
+              name: user.name,
+              coins: user.coins,
+              rating: user.rating,
+              level: user.level,
+              operator,
+              delta: -amt,
+              action: 'tg_subpoints',
+              timestamp: Date.now(),
+            });
+          }
+
           reply = `✅ 已扣减 *${user.name}* (📱 \`${user.phone}\`) 筹码 *-${amt.toLocaleString()}* 分！\n当前结余: *${user.coins.toLocaleString()}* 分`;
           break;
         }
@@ -1354,6 +1424,24 @@ export async function handleApiRoute(
           user.updatedAt = Date.now();
           saveDatabase(db);
           recordAdminLog('TG_SETPOINTS', operator, user.name, `通过 Telegram 重新设定筹码为 ${amt}`, amt);
+
+          if (typeof broadcast === 'function') {
+            broadcast({
+              type: 'user_coins_updated',
+              userId: user.id,
+              phone: user.phone,
+              username: user.username,
+              name: user.name,
+              coins: user.coins,
+              rating: user.rating,
+              level: user.level,
+              operator,
+              delta: 0,
+              action: 'tg_setpoints',
+              timestamp: Date.now(),
+            });
+          }
+
           reply = `✅ 已将 *${user.name}* (📱 \`${user.phone}\`) 的筹码直接重设为 *${amt.toLocaleString()}* 分！`;
           break;
         }

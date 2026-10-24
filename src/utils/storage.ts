@@ -44,7 +44,7 @@ export interface MatchRecord {
 
 export interface PointsTransaction {
   id: string;
-  type: 'checkin' | 'game_win' | 'game_loss' | 'relief' | 'exchange' | 'achievement' | 'reward' | 'admin_grant';
+  type: 'checkin' | 'game_win' | 'game_loss' | 'relief' | 'exchange' | 'achievement' | 'reward' | 'admin_grant' | 'admin_deduct' | 'transfer_out' | 'transfer_in' | string;
   title: string;
   amount: number;
   balanceAfter: number;
@@ -279,6 +279,12 @@ export async function syncWithServer(profile: UserProfile, records: MatchRecord[
     if (data && data.notFound) {
       clearLocalAuthData();
       return { success: false, notFound: true, error: data.error };
+    }
+    if (data && typeof data.coins === 'number' && data.coins !== profile.coins) {
+      profile.coins = data.coins;
+      if (data.rating) profile.rating = data.rating;
+      if (data.level) profile.level = data.level;
+      saveLocalProfile(profile);
     }
     return data;
   } catch {

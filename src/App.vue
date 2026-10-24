@@ -50,7 +50,7 @@
         <div class="flex items-center gap-2">
           <button
             type="button"
-            @click="showPointsModal = true"
+            @click="openPointsModal"
             class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#241B14] via-[#2F2218] to-[#201711] hover:from-[#32251B] hover:to-[#2B1F17] border border-amber-500/50 hover:border-amber-400 transition-all flex items-center gap-2 text-xs shadow-md active:scale-95 group cursor-pointer"
             title="点击打开积分管理与筹码钱庄"
           >
@@ -249,7 +249,7 @@
           <!-- Coins Badge (Click opens Points Management) -->
           <button
             type="button"
-            @click="showPointsModal = true"
+            @click="openPointsModal"
             class="px-2 sm:px-2.5 py-1 rounded-xl bg-black/60 border border-amber-500/50 text-amber-300 font-mono font-bold text-xs flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
             title="钱庄账户"
           >
@@ -1513,6 +1513,30 @@ function connectWs() {
         }
         addDanmaku(msg.message.sender, msg.message.avatar || '👤', msg.message.text, msg.message.prop);
         triggerSpeechBubble(`${msg.message.sender}: ${msg.message.text}`);
+      } else if (msg.type === 'user_coins_updated') {
+        const cleanUserPhone = String(userProfile.phone || '').trim().replace(/\D/g, '');
+        const cleanMsgPhone = String(msg.phone || '').trim().replace(/\D/g, '');
+        const isMatch = (msg.userId && msg.userId === userProfile.id) ||
+                        (cleanUserPhone && cleanMsgPhone && cleanUserPhone === cleanMsgPhone) ||
+                        (msg.username && msg.username === userProfile.username);
+        if (isMatch) {
+          const delta = typeof msg.delta === 'number' ? msg.delta : (msg.coins - userProfile.coins);
+          userProfile.coins = msg.coins;
+          if (msg.rating) userProfile.rating = msg.rating;
+          if (msg.level) userProfile.level = msg.level;
+          saveLocalProfile(userProfile);
+          recordPointsTx(
+            delta >= 0 ? 'admin_grant' : 'admin_deduct',
+            `钱庄系统/Bot筹码调配 (${delta >= 0 ? '+' : ''}${delta})`,
+            delta,
+            userProfile.coins
+          );
+          soundFX.playCoinShower();
+          triggerSpeechBubble(`🪙 钱庄筹码已更新为 ${msg.coins.toLocaleString()} 分 (${delta >= 0 ? '+' : ''}${delta})`);
+        }
+      } else if (msg.type === 'all_users_coins_updated') {
+        fetchFreshProfile();
+        soundFX.playCoinShower();
       }
     } catch {}
   };
@@ -1847,6 +1871,43 @@ async function syncAndCheckProfile() {
   }
 }
 
+async function fetchFreshProfile() {
+  if (userProfile.isLoggedIn && userProfile.id && userProfile.sessionToken) {
+    try {
+      const res = await fetch('/api/auth/check-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userProfile.id, sessionToken: userProfile.sessionToken }),
+      });
+      const data = await res.json();
+      if (data.success && data.sessionExpired) {
+        const guest = resetToDefaultGuestProfile();
+        Object.assign(userProfile, guest);
+        showAuthModal.value = true;
+        soundFX.playTap();
+      } else if (data.success && typeof data.coins === 'number' && data.coins !== userProfile.coins) {
+        const diff = data.coins - userProfile.coins;
+        userProfile.coins = data.coins;
+        if (data.rating) userProfile.rating = data.rating;
+        if (data.level) userProfile.level = data.level;
+        saveLocalProfile(userProfile);
+        recordPointsTx(
+          diff >= 0 ? 'admin_grant' : 'admin_deduct',
+          `钱庄同步筹码 (${diff >= 0 ? '+' : ''}${diff})`,
+          diff,
+          userProfile.coins
+        );
+      }
+    } catch {}
+  }
+}
+
+function openPointsModal() {
+  showPointsModal.value = true;
+  soundFX.playTap();
+  fetchFreshProfile();
+}
+
 function onGameRestart() {
   soundFX.playTap();
 }
@@ -1934,28 +1995,9 @@ onMounted(() => {
     window.addEventListener('offline', () => { isOnline.value = false; });
   }
 
-  const performSessionCheck = async () => {
-    if (userProfile.isLoggedIn && userProfile.id && userProfile.sessionToken) {
-      try {
-        const res = await fetch('/api/auth/check-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: userProfile.id, sessionToken: userProfile.sessionToken }),
-        });
-        const data = await res.json();
-        if (data.success && data.sessionExpired) {
-          const guest = resetToDefaultGuestProfile();
-          Object.assign(userProfile, guest);
-          showAuthModal.value = true;
-          soundFX.playTap();
-        }
-      } catch {}
-    }
-  };
-
-  // Immediate check on initial mount
-  performSessionCheck();
-  sessionCheckInterval = setInterval(performSessionCheck, 20000);
+  // Immediate check & balance refresh on initial mount
+  fetchFreshProfile();
+  sessionCheckInterval = setInterval(fetchFreshProfile, 20000);
 });
 
 onBeforeUnmount(() => {
